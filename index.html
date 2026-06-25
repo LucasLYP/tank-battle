@@ -167,6 +167,10 @@
                     }
                 }
             }
+            // 添加基地保护墙（经典设定）
+            map[11][8] = 1; map[11][9] = 1; map[11][10] = 1;
+            map[12][8] = 1; map[12][10] = 1;
+            map[13][8] = 1; map[13][9] = 1; map[13][10] = 1;
         }
 
         // 坦克类
@@ -335,7 +339,7 @@
                         gameOver();
                     } else {
                         // 重生
-                        this.x = 9 * TILE_SIZE + 3;
+                        this.x = 3 * TILE_SIZE + 3;
                         this.y = 12 * TILE_SIZE + 3;
                         this.dir = DIR.UP;
                     }
@@ -467,7 +471,7 @@
             explosions = [];
 
             // 创建玩家
-            player = new Tank(9 * TILE_SIZE + 3, 12 * TILE_SIZE + 3, DIR.UP, true);
+            player = new Tank(3 * TILE_SIZE + 3, 12 * TILE_SIZE + 3, DIR.UP, true);
             tanks.push(player);
 
             enemiesToSpawn = 20;
