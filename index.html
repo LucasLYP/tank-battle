@@ -175,18 +175,20 @@
 
         // 坦克类
         class Tank {
-            constructor(x, y, dir, isPlayer = false) {
-                this.x = x;
-                this.y = y;
+            constructor(col, row, dir, isPlayer = false) {
+                this.col = col;
+                this.row = row;
+                this.x = col * TILE_SIZE + (TILE_SIZE - 34) / 2;
+                this.y = row * TILE_SIZE + (TILE_SIZE - 34) / 2;
                 this.dir = dir;
                 this.isPlayer = isPlayer;
                 this.width = 34;
                 this.height = 34;
-                this.speed = isPlayer ? 2 : 1.5;
                 this.color = isPlayer ? '#4caf50' : '#f44336';
                 this.bullets = [];
                 this.shootCooldown = 0;
                 this.moveTimer = 0;
+                this.moveCooldown = 0;
                 this.changeDirTimer = 0;
                 this.alive = true;
                 this.flashTimer = 0;
@@ -196,37 +198,24 @@
                 return { x: this.x, y: this.y, w: this.width, h: this.height };
             }
 
-            canMove(dx, dy) {
-                const newX = this.x + dx;
-                const newY = this.y + dy;
+            canMove(dir) {
+                const newCol = this.col + DIR_OFFSET[dir].x;
+                const newRow = this.row + DIR_OFFSET[dir].y;
 
                 // 边界检测
-                if (newX < 0 || newX + this.width > canvas.width ||
-                    newY < 0 || newY + this.height > canvas.height) {
+                if (newCol < 0 || newCol >= COLS || newRow < 0 || newRow >= ROWS) {
                     return false;
                 }
 
                 // 地图碰撞检测
-                const corners = [
-                    { x: newX, y: newY },
-                    { x: newX + this.width - 1, y: newY },
-                    { x: newX, y: newY + this.height - 1 },
-                    { x: newX + this.width - 1, y: newY + this.height - 1 }
-                ];
-
-                for (let p of corners) {
-                    const c = Math.floor(p.x / TILE_SIZE);
-                    const r = Math.floor(p.y / TILE_SIZE);
-                    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
-                        if (map[r][c] === 1 || map[r][c] === 2 || map[r][c] === 3 || map[r][c] === 5) {
-                            return false;
-                        }
-                    }
+                const tile = map[newRow][newCol];
+                if (tile === 1 || tile === 2 || tile === 3 || tile === 5) {
+                    return false;
                 }
 
                 // 与其他坦克碰撞
                 for (let t of tanks) {
-                    if (t !== this && t.alive && rectIntersect(newX, newY, this.width, this.height, t.x, t.y, t.width, t.height)) {
+                    if (t !== this && t.alive && t.col === newCol && t.row === newRow) {
                         return false;
                     }
                 }
@@ -236,12 +225,14 @@
 
             move(dir) {
                 this.dir = dir;
-                const dx = DIR_OFFSET[dir].x * this.speed;
-                const dy = DIR_OFFSET[dir].y * this.speed;
-                if (this.canMove(dx, dy)) {
-                    this.x += dx;
-                    this.y += dy;
+                if (this.canMove(dir)) {
+                    this.col += DIR_OFFSET[dir].x;
+                    this.row += DIR_OFFSET[dir].y;
+                    this.x = this.col * TILE_SIZE + (TILE_SIZE - this.width) / 2;
+                    this.y = this.row * TILE_SIZE + (TILE_SIZE - this.height) / 2;
+                    return true;
                 }
+                return false;
             }
 
             shoot() {
@@ -257,7 +248,7 @@
                 else if (this.dir === DIR.LEFT) bx = this.x - 6;
                 else if (this.dir === DIR.RIGHT) bx = this.x + this.width;
 
-                this.bullets.push(new Bullet(bx, by, this.dir, this.isPlayer));
+                this.bullets.push(new Bullet(bx, by, this.dir, this.isPlayer, this));
             }
 
             update() {
@@ -273,7 +264,13 @@
                         this.dir = Math.floor(Math.random() * 4);
                         this.changeDirTimer = 60 + Math.random() * 120;
                     }
-                    this.move(this.dir);
+                    this.moveTimer--;
+                    if (this.moveTimer <= 0) {
+                        if (!this.move(this.dir)) {
+                            this.dir = Math.floor(Math.random() * 4);
+                        }
+                        this.moveTimer = 12;
+                    }
                     if (Math.random() < 0.02) this.shoot();
                 }
 
@@ -339,8 +336,10 @@
                         gameOver();
                     } else {
                         // 重生
-                        this.x = 3 * TILE_SIZE + 3;
-                        this.y = 12 * TILE_SIZE + 3;
+                        this.col = 3;
+                        this.row = 12;
+                        this.x = this.col * TILE_SIZE + (TILE_SIZE - this.width) / 2;
+                        this.y = this.row * TILE_SIZE + (TILE_SIZE - this.height) / 2;
                         this.dir = DIR.UP;
                     }
                 } else {
@@ -355,12 +354,13 @@
 
         // 子弹类
         class Bullet {
-            constructor(x, y, dir, isPlayer) {
+            constructor(x, y, dir, isPlayer, owner) {
                 this.x = x;
                 this.y = y;
                 this.dir = dir;
                 this.speed = 5;
                 this.isPlayer = isPlayer;
+                this.owner = owner;
                 this.width = 6;
                 this.height = 6;
                 this.alive = true;
@@ -471,7 +471,7 @@
             explosions = [];
 
             // 创建玩家
-            player = new Tank(3 * TILE_SIZE + 3, 12 * TILE_SIZE + 3, DIR.UP, true);
+            player = new Tank(3, 12, DIR.UP, true);
             tanks.push(player);
 
             enemiesToSpawn = 20;
@@ -485,13 +485,13 @@
             if (enemiesToSpawn <= 0 || enemyCount >= maxEnemies) return;
 
             const spawnPoints = [
-                { x: 0 * TILE_SIZE + 3, y: 0 * TILE_SIZE + 3 },
-                { x: 9 * TILE_SIZE + 3, y: 0 * TILE_SIZE + 3 },
-                { x: 18 * TILE_SIZE + 3, y: 0 * TILE_SIZE + 3 }
+                { col: 0, row: 0 },
+                { col: 9, row: 0 },
+                { col: 18, row: 0 }
             ];
             const sp = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
 
-            const enemy = new Tank(sp.x, sp.y, DIR.DOWN, false);
+            const enemy = new Tank(sp.col, sp.row, DIR.DOWN, false);
             tanks.push(enemy);
             enemiesToSpawn--;
             enemyCount++;
@@ -504,10 +504,16 @@
             frameCount++;
 
             // 玩家移动
-            if (keys['KeyW'] || keys['ArrowUp']) player.move(DIR.UP);
-            else if (keys['KeyS'] || keys['ArrowDown']) player.move(DIR.DOWN);
-            else if (keys['KeyA'] || keys['ArrowLeft']) player.move(DIR.LEFT);
-            else if (keys['KeyD'] || keys['ArrowRight']) player.move(DIR.RIGHT);
+            if (player.moveCooldown <= 0) {
+                let moved = false;
+                if (keys['KeyW'] || keys['ArrowUp']) { player.move(DIR.UP); moved = true; }
+                else if (keys['KeyS'] || keys['ArrowDown']) { player.move(DIR.DOWN); moved = true; }
+                else if (keys['KeyA'] || keys['ArrowLeft']) { player.move(DIR.LEFT); moved = true; }
+                else if (keys['KeyD'] || keys['ArrowRight']) { player.move(DIR.RIGHT); moved = true; }
+                if (moved) player.moveCooldown = 8;
+            } else {
+                player.moveCooldown--;
+            }
 
             // 更新所有坦克
             for (let t of tanks) {
