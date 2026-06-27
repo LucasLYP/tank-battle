@@ -192,6 +192,11 @@
                 this.changeDirTimer = 0;
                 this.alive = true;
                 this.flashTimer = 0;
+                this.isMoving = false;
+                this.moveProgress = 0;
+                this.moveDuration = isPlayer ? 10 : 22;
+                this.fromCol = col;
+                this.fromRow = row;
             }
 
             getRect() {
@@ -224,12 +229,15 @@
             }
 
             move(dir) {
+                if (this.isMoving) return false;
                 this.dir = dir;
                 if (this.canMove(dir)) {
+                    this.fromCol = this.col;
+                    this.fromRow = this.row;
                     this.col += DIR_OFFSET[dir].x;
                     this.row += DIR_OFFSET[dir].y;
-                    this.x = this.col * TILE_SIZE + (TILE_SIZE - this.width) / 2;
-                    this.y = this.row * TILE_SIZE + (TILE_SIZE - this.height) / 2;
+                    this.isMoving = true;
+                    this.moveProgress = 0;
                     return true;
                 }
                 return false;
@@ -254,6 +262,21 @@
             update() {
                 if (!this.alive) return;
 
+                // 平滑移动插值
+                if (this.isMoving) {
+                    this.moveProgress += 1 / this.moveDuration;
+                    if (this.moveProgress >= 1) {
+                        this.moveProgress = 1;
+                        this.isMoving = false;
+                    }
+                    const targetX = this.col * TILE_SIZE + (TILE_SIZE - this.width) / 2;
+                    const targetY = this.row * TILE_SIZE + (TILE_SIZE - this.height) / 2;
+                    const fromX = this.fromCol * TILE_SIZE + (TILE_SIZE - this.width) / 2;
+                    const fromY = this.fromRow * TILE_SIZE + (TILE_SIZE - this.height) / 2;
+                    this.x = fromX + (targetX - fromX) * this.moveProgress;
+                    this.y = fromY + (targetY - fromY) * this.moveProgress;
+                }
+
                 if (this.shootCooldown > 0) this.shootCooldown--;
                 if (this.flashTimer > 0) this.flashTimer--;
 
@@ -264,12 +287,14 @@
                         this.dir = Math.floor(Math.random() * 4);
                         this.changeDirTimer = 60 + Math.random() * 120;
                     }
-                    this.moveTimer--;
-                    if (this.moveTimer <= 0) {
-                        if (!this.move(this.dir)) {
-                            this.dir = Math.floor(Math.random() * 4);
+                    if (!this.isMoving) {
+                        if (this.moveTimer > 0) this.moveTimer--;
+                        if (this.moveTimer <= 0) {
+                            if (!this.move(this.dir)) {
+                                this.dir = Math.floor(Math.random() * 4);
+                                this.moveTimer = 36;
+                            }
                         }
-                        this.moveTimer = 12;
                     }
                     if (Math.random() < 0.02) this.shoot();
                 }
@@ -504,15 +529,11 @@
             frameCount++;
 
             // 玩家移动
-            if (player.moveCooldown <= 0) {
-                let moved = false;
-                if (keys['KeyW'] || keys['ArrowUp']) { player.move(DIR.UP); moved = true; }
-                else if (keys['KeyS'] || keys['ArrowDown']) { player.move(DIR.DOWN); moved = true; }
-                else if (keys['KeyA'] || keys['ArrowLeft']) { player.move(DIR.LEFT); moved = true; }
-                else if (keys['KeyD'] || keys['ArrowRight']) { player.move(DIR.RIGHT); moved = true; }
-                if (moved) player.moveCooldown = 8;
-            } else {
-                player.moveCooldown--;
+            if (!player.isMoving) {
+                if (keys['KeyW'] || keys['ArrowUp']) player.move(DIR.UP);
+                else if (keys['KeyS'] || keys['ArrowDown']) player.move(DIR.DOWN);
+                else if (keys['KeyA'] || keys['ArrowLeft']) player.move(DIR.LEFT);
+                else if (keys['KeyD'] || keys['ArrowRight']) player.move(DIR.RIGHT);
             }
 
             // 更新所有坦克
